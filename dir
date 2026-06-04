@@ -1,0 +1,26 @@
+ Volume in Laufwerk C: hat keine Bezeichnung.
+ Volumeseriennummer: 1650-137D
+
+ Verzeichnis von c:\Users\noelj\.claude\projects\birthday_reminder
+
+04.06.2026  14:15    <DIR>          .
+04.06.2026  13:29    <DIR>          ..
+04.06.2026  13:31               264 .gitignore
+04.06.2026  13:42            12.288 birthdays.db
+04.06.2026  14:10    <DIR>          build
+04.06.2026  14:06            13.193 database.py
+04.06.2026  14:20                 0 dir
+04.06.2026  14:08    <DIR>          dist
+04.06.2026  14:04            18.243 gui.py
+04.06.2026  14:10               693 gui.spec
+04.06.2026  13:30                 0 main.py
+04.06.2026  14:09               695 main.spec
+04.06.2026  13:51             5.308 notifications.py
+04.06.2026  13:31               801 README.md
+04.06.2026  13:31                13 requirements.txt
+04.06.2026  13:53             3.888 startup.py
+04.06.2026  14:01             3.935 tray.py
+04.06.2026  14:08    <DIR>          venv
+04.06.2026  13:42    <DIR>          __pycache__
+              13 Datei(en),         59.321 Bytes
+               6 Verzeichnis(se), 916.329.967.616 Bytes frei
