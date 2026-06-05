@@ -28,10 +28,10 @@ from customtkinter import (
     CTkTextbox,
     CTkComboBox,
 )
-from tkinter import ttk
+from tkinter import ttk, messagebox
 
 # Local import – database layer implements all persistence logic.
-from . import database
+import database
 
 # ---------------------------------------------------------------------------
 # Model – thin wrapper around the ``database`` module.
@@ -125,12 +125,15 @@ class View:
         self.btn_delete = CTkButton(self.toolbar, text="Delete")
         self.btn_refresh = CTkButton(self.toolbar, text="Refresh")
         self.btn_dashboard = CTkButton(self.toolbar, text="Dashboard")
+        # New button to return to the birthdays list view
+        self.btn_birthdays = CTkButton(self.toolbar, text="Birthdays")
         for btn in (
             self.btn_add,
             self.btn_edit,
             self.btn_delete,
             self.btn_refresh,
             self.btn_dashboard,
+            self.btn_birthdays,
         ):
             btn.pack(side="left", padx=5)
 
@@ -325,9 +328,7 @@ class _BirthdayDialog(ctk.CTkToplevel):
                 raise ValueError
             bdate = datetime.date.fromisoformat(bdate_str)
         except Exception:
-            ctk.CTkMessagebox.show_error(
-                "Invalid input", "Please provide valid values.", parent=self
-            )
+            messagebox.showerror(title="Invalid input", message="Please provide valid values.", parent=self)
             return
         self.result = (first, last, bdate, email, notes, category)
         self.destroy()
@@ -363,6 +364,7 @@ class Controller:
             command=lambda: self.refresh_table(self.model.get_all_birthdays())
         )
         self.view.btn_dashboard.configure(command=self.show_dashboard)
+        self.view.btn_birthdays.configure(command=lambda: self.view.show_table())
 
     # ---------------------------------------------------------------------
     # CRUD callbacks
@@ -454,10 +456,10 @@ class Controller:
         self.view.refresh_table(data)
 
     def _show_msg(self, msg: str) -> None:
-        ctk.CTkMessagebox.show_info(title="Info", message=msg, parent=self.view.root)
+        messagebox.showinfo(title="Info", message=msg, parent=self.view.root)
 
     def _confirm(self, msg: str) -> bool:
-        return ctk.CTkMessagebox.ask_yes_no(title="Confirm", message=msg, parent=self.view.root)
+        return messagebox.askyesno(title="Confirm", message=msg, parent=self.view.root)
 
 # ---------------------------------------------------------------------------
 # Entry point – start the application if this file is executed directly.
