@@ -32,5 +32,3 @@ birthday_reminder/
 4. Run `python main.py`
 
 ---
-
-*Generated with Claude Code*
