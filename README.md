@@ -2,6 +2,10 @@
 
 A simple Python desktop application that reminds you of upcoming birthdays.
 
+## Screenshot
+
+![Dashboard](screenshot.png)
+
 ## Features
 
 - Stores birthdays in a SQLite database
