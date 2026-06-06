@@ -9,6 +9,10 @@
 
 A modern desktop application for tracking birthdays with a clean CustomTkinter interface, automatic Windows toast notifications, system-tray integration, and CSV import/export support.
 
+## Screenshot
+
+![Dashboard](screenshot.png)
+
 ---
 
 ## Features
