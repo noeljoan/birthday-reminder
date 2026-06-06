@@ -195,7 +195,7 @@ python notifications.py
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
+MIT License - See [LICENSE](https://github.com/noeljoan/weight-and-balance/blob/main/LICENSE) file for details.
 
 ---
 
