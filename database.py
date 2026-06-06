@@ -15,6 +15,7 @@ from typing import List, Tuple, Optional
 
 # Path to the SQLite database file (created in the project root)
 DB_PATH = Path(__file__).with_name("birthdays.db")
+print("DATABASE:", DB_PATH.resolve())
 
 # SQL statements used throughout the module
 _CREATE_TABLE_SQL = """
@@ -44,12 +45,15 @@ def _get_connection() -> sqlite3.Connection:
 
 # Initialise the database – executed once on import
 def _initialize_db() -> None:
-    """Create the database file and the ``birthdays`` table if necessary."""
+    """Create the database file and the ``birthdays`` table if necessary.
+
+    The original implementation dropped the ``birthdays`` table on each import,
+    which erased all persisted records. The fix now only creates the table if it
+    does not already exist, preserving data across restarts.
+    """
     conn = _get_connection()
     try:
-        # Drop the table if it exists to ensure correct schema
-        conn.execute("DROP TABLE IF EXISTS birthdays")
-        # Create the table with the correct schema
+        # Create the table with the correct schema if it does not exist
         conn.executescript(_CREATE_TABLE_SQL)
     finally:
         conn.close()
@@ -321,8 +325,8 @@ def import_csv(file_path: str) -> int:
     ``FirstName,LastName,Birthday,Email,Notes,Category``
 
     ``Birthday`` must be in ``YYYY-MM-DD`` format. Rows that cannot be parsed
-    are skipped. The function returns the number of successfully imported
-    records.
+    are skipped. Duplicate entries (same first name, last name, and birthday) are ignored.
+    The function returns the number of newly imported records.
     """
     count = 0
     with open(file_path, newline='', encoding='utf-8') as csvfile:
@@ -335,6 +339,17 @@ def import_csv(file_path: str) -> int:
                 bdate = datetime.datetime.strptime(bdate_str, "%Y-%m-%d").date()
             except Exception:
                 continue  # skip invalid date
+            # Check for duplicate
+            existing = conn = _get_connection()
+            try:
+                dup = conn.execute(
+                    "SELECT 1 FROM birthdays WHERE first_name = ? AND last_name = ? AND birthday = ?",
+                    (first, last, bdate.isoformat()),
+                ).fetchone()
+            finally:
+                conn.close()
+            if dup:
+                continue
             add_birthday(first, last, bdate, email or None, notes or None, category or None)
             count += 1
     return count

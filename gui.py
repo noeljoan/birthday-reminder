@@ -94,6 +94,16 @@ class Model:
     def calculate_age(birth: datetime.date, as_of: datetime.date = None) -> int:
         return database.calculate_age(birth, as_of)
 
+    @staticmethod
+    def import_csv(file_path: str) -> int:
+        """Delegate CSV import to the database layer."""
+        return database.import_csv(file_path)
+
+    @staticmethod
+    def export_csv(file_path: str) -> int:
+        """Delegate CSV export to the database layer."""
+        return database.export_csv(file_path)
+
 # ---------------------------------------------------------------------------
 # View – builds the CustomTkinter widgets.
 # ---------------------------------------------------------------------------
@@ -120,22 +130,41 @@ class View:
         self.toolbar = CTkFrame(self.main_frame)
         self.toolbar.pack(fill="x", side="top", pady=(0, 10))
 
-        self.btn_add = CTkButton(self.toolbar, text="Add")
-        self.btn_edit = CTkButton(self.toolbar, text="Edit")
-        self.btn_delete = CTkButton(self.toolbar, text="Delete")
-        self.btn_refresh = CTkButton(self.toolbar, text="Refresh")
-        self.btn_dashboard = CTkButton(self.toolbar, text="Dashboard")
-        # New button to return to the birthdays list view
-        self.btn_birthdays = CTkButton(self.toolbar, text="Birthdays")
-        for btn in (
+        self.btn_add = CTkButton(self.toolbar, text="Add", width=80)
+        self.btn_edit = CTkButton(self.toolbar, text="Edit", width=80)
+        self.btn_delete = CTkButton(self.toolbar, text="Delete", width=80)
+        self.btn_refresh = CTkButton(self.toolbar, text="Refresh", width=90)
+        self.btn_dashboard = CTkButton(self.toolbar, text="Dashboard", width=100)
+        self.btn_import = CTkButton(self.toolbar, text="Import CSV", width=120)
+        self.btn_export = CTkButton(self.toolbar, text="Export CSV", width=120)
+        self.btn_birthdays = CTkButton(self.toolbar, text="Birthdays", width=100)
+        # Search entry (placed after buttons, will be packed separately)
+        self.search_var = ctk.StringVar()
+        # Search label and entry – clearly indicate purpose
+        self.lbl_search = CTkLabel(self.toolbar, text="Search:")
+        self.entry_search = CTkEntry(self.toolbar, placeholder_text="Search birthdays...", textvariable=self.search_var)
+        # Layout toolbar using grid – buttons keep natural size, entry expands
+        toolbar_buttons = [
             self.btn_add,
             self.btn_edit,
             self.btn_delete,
             self.btn_refresh,
+            self.btn_import,
+            self.btn_export,
             self.btn_dashboard,
             self.btn_birthdays,
-        ):
-            btn.pack(side="left", padx=5)
+        ]
+        for idx, btn in enumerate(toolbar_buttons):
+            btn.grid(row=0, column=idx, padx=3, pady=2, sticky="w")
+            # Buttons keep their natural size
+            self.toolbar.columnconfigure(idx, weight=0)
+        # Search label and entry
+        search_label_col = len(toolbar_buttons)
+        self.lbl_search.grid(row=0, column=search_label_col, padx=3, pady=2, sticky="w")
+        self.entry_search.grid(row=0, column=search_label_col + 1, padx=3, pady=2, sticky="ew")
+        # Give entry column a weight so it expands, others stay compact
+        self.toolbar.columnconfigure(search_label_col, weight=0)
+        self.toolbar.columnconfigure(search_label_col + 1, weight=1)
 
         # ----- Two primary views: table and dashboard -----
         self.table_view = CTkFrame(self.main_frame)
@@ -151,6 +180,7 @@ class View:
             "email",
             "category",
             "notes",
+            "days_remaining",
         )
         self.tree = ttk.Treeview(self.table_view, columns=self.columns, show="headings")
         for col in self.columns:
@@ -166,6 +196,8 @@ class View:
                 self.tree.column(col, width=180)
             elif col == "category":
                 self.tree.column(col, width=100)
+            elif col == "days_remaining":
+                self.tree.column(col, width=130, anchor="center")
             else:
                 self.tree.column(col, width=200)
         self.tree.pack(fill="both", expand=True)
@@ -193,12 +225,19 @@ class View:
     # Helper: create a dashboard card
     # ---------------------------------------------------------------------
     def _create_card(self, parent: CTkFrame, title: str, value: str) -> CTkFrame:
+        """Create a dashboard card.
+
+        ``value`` is shown in a read‑only multiline textbox so we can display
+        names, dates, or other details without being constrained to a single line.
+        """
         card = CTkFrame(parent, corner_radius=10)
         CTkLabel(card, text=title, font=("Helvetica", 14)).pack(pady=(10, 5))
-        value_lbl = CTkLabel(card, text=value, font=("Helvetica", 24, "bold"))
-        value_lbl.pack(pady=(0, 10))
+        txt = CTkTextbox(card, height=6, width=30, font=("Helvetica", 12))
+        txt.insert("1.0", value)
+        txt.configure(state="disabled")
+        txt.pack(pady=(0, 10), fill="both", expand=True)
         # Store for later updates
-        card.value_label = value_lbl  # type: ignore
+        card.value_widget = txt  # type: ignore
         return card
 
     # ---------------------------------------------------------------------
@@ -234,9 +273,17 @@ class View:
         self.dashboard_view.pack_forget()
         self.table_view.pack(fill="both", expand=True)
 
-    def update_card(self, card: CTkFrame, new_value: str) -> None:
-        """Update the numeric/value label inside a dashboard card."""
-        card.value_label.configure(text=new_value)
+    def update_card(self, card: CTkFrame, new_content: str) -> None:
+        """Update the textbox content inside a dashboard card.
+
+        ``new_content`` may contain newlines; it replaces the entire text.
+        """
+        # The card stores the textbox widget as ``value_widget`` (see _create_card)
+        txt: CTkTextbox = getattr(card, "value_widget")
+        txt.configure(state="normal")
+        txt.delete("1.0", "end")
+        txt.insert("1.0", new_content)
+        txt.configure(state="disabled")
 
 # ---------------------------------------------------------------------------
 # Dialog used for adding / editing a birthday.
@@ -340,18 +387,79 @@ class _BirthdayDialog(ctk.CTkToplevel):
 # ---------------------------------------------------------------------------
 # Controller – connects UI events to model actions.
 # ---------------------------------------------------------------------------
+import json
+import threading
+from pathlib import Path
+
+import notifications
+
 class Controller:
+
     """Orchestrates interaction between the ``Model`` and ``View``.
 
     The controller binds callbacks, drives data refreshes, and updates the
-    dashboard cards.
+    dashboard cards. It also handles CSV import/export, search filtering, and
+    the countdown column. Additionally it implements startup dashboard view,
+    daily birthday pop‑up, and system‑tray integration.
     """
+    def _handle_startup_popup(self):
+        birthdays = self.model.birthdays_today()
 
+        if not birthdays:
+            return
+
+        popup = ctk.CTkToplevel(self.view.root)
+        popup.title("🎂 Birthdays Today")
+        popup.geometry("250x250")
+        popup.transient(self.view.root)
+        popup.grab_set()
+
+        title = ctk.CTkLabel(
+            popup,
+            text="🎂 Today's Birthdays",
+            font=("Arial", 20, "bold")
+        )
+        title.pack(pady=15)
+
+        names = "\n".join(
+            f"{row[1]} {row[2]}"
+            for row in birthdays
+        )
+
+        textbox = ctk.CTkTextbox(
+            popup,
+            width=450,
+            height=100
+        )
+        textbox.pack(padx=20, pady=10, fill="both", expand=True)
+        textbox.insert("1.0", names)
+        textbox.configure(state="disabled")
+
+        close_btn = ctk.CTkButton(
+            popup,
+            text="OK",
+            command=popup.destroy
+        )
+        close_btn.pack(pady=15)
     def __init__(self, root: CTk) -> None:
         self.model = Model()
         self.view = View(root)
         self._bind_events()
+        # Start on Dashboard view and populate it
+        self.show_dashboard()
+        self.update_dashboard()
+        # Populate initial table view (used when switching back)
         self.refresh_table(self.model.get_all_birthdays())
+        # Hook up search variable changes for live filtering
+        self.view.search_var.trace_add("write", self._on_search_change)
+        # Daily popup logic
+        self.view.root.after(1000, self._handle_startup_popup)
+        # self._handle_startup_popup()
+        # Bind minimize/close events for tray behavior
+        # self.view.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        # self.view.root.bind("<Unmap>", self._on_minimize)
+        # Start system tray in background
+        threading.Thread(target=notifications.start_tray_if_needed, daemon=True).start()
 
     # ---------------------------------------------------------------------
     # Event binding
@@ -365,6 +473,9 @@ class Controller:
         )
         self.view.btn_dashboard.configure(command=self.show_dashboard)
         self.view.btn_birthdays.configure(command=lambda: self.view.show_table())
+        # New CSV buttons
+        self.view.btn_import.configure(command=self.on_import_csv)
+        self.view.btn_export.configure(command=self.on_export_csv)
 
     # ---------------------------------------------------------------------
     # CRUD callbacks
@@ -420,6 +531,59 @@ class Controller:
         self.refresh_table(self.model.get_all_birthdays())
 
     # ---------------------------------------------------------------------
+    # CSV import / export
+    # ---------------------------------------------------------------------
+    def on_import_csv(self) -> None:
+        from tkinter import filedialog
+        file_path = filedialog.askopenfilename(
+            title="Import CSV",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+        try:
+            imported = self.model.import_csv(file_path)
+            self._show_msg(f"Successfully imported {imported} records.")
+            self.refresh_table(self.model.get_all_birthdays())
+        except Exception as e:
+            self._show_msg(f"Import failed: {e}")
+
+    def on_export_csv(self) -> None:
+        from tkinter import filedialog
+        file_path = filedialog.asksaveasfilename(
+            title="Export CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+        try:
+            exported = self.model.export_csv(file_path)
+            self._show_msg(f"Exported {exported} records to {file_path}.")
+        except Exception as e:
+            self._show_msg(f"Export failed: {e}")
+
+    # ---------------------------------------------------------------------
+    # Search handling
+    # ---------------------------------------------------------------------
+    def _on_search_change(self, *_) -> None:
+        """Filter table rows based on the search entry.
+
+        The search matches first name, last name, or email fields case‑insensitively.
+        """
+        query = self.view.search_var.get().strip().lower()
+        all_data = self.model.get_all_birthdays()
+        if not query:
+            filtered = all_data
+        else:
+            filtered = [
+                row
+                for row in all_data
+                if query in row[1].lower() or query in row[2].lower() or (row[4] and query in row[4].lower())
+            ]
+        self.refresh_table(filtered)
+
+    # ---------------------------------------------------------------------
     # Dashboard handling
     # ---------------------------------------------------------------------
     def show_dashboard(self) -> None:
@@ -427,33 +591,79 @@ class Controller:
         self.update_dashboard()
 
     def update_dashboard(self) -> None:
-        # Birthdays today count
+        # ---------- Birthdays Today ----------
         today = self.model.birthdays_today()
-        self.view.update_card(self.view.card_today, str(len(today)))
+        today_names = [f"{r[1]} {r[2]}" for r in today]
+        today_content = f"Count: {len(today)}\n" + "\n".join(today_names) if today_names else "Count: 0"
+        self.view.update_card(self.view.card_today, today_content)
 
-        # Next 10 days count
+        # ---------- Next 10 Days ----------
         next10 = self.model.get_upcoming_birthdays(10)
-        self.view.update_card(self.view.card_next10, str(len(next10)))
+        next10_lines = []
+        for rec in next10:
+            # rec: (id, first, last, bdate, email, notes, cat, month, day)
+            name = f"{rec[1]} {rec[2]}"
+            bdate: datetime.date = rec[3]
+            date_str = bdate.strftime('%d %b %Y')
+            next10_lines.append(f"{name} – {date_str}")
+        next10_content = f"Count: {len(next10)}\n" + "\n".join(next10_lines) if next10_lines else "Count: 0"
+        self.view.update_card(self.view.card_next10, next10_content)
 
-        # Next birthday (first upcoming after today)
+        # ---------- Next Birthday ----------
         if next10:
             next_birth = next10[0]
             name = f"{next_birth[1]} {next_birth[2]}"
-            # Age after the upcoming birthday
-            age = self.model.calculate_age(next_birth[3]) + 1
-            self.view.update_card(self.view.card_next, f"{name} ({age})")
+            bdate: datetime.date = next_birth[3]
+            # Days remaining calculation
+            today_date = datetime.date.today()
+            # Compute next occurrence (handles year wrap)
+            next_occurrence = datetime.date(year=today_date.year, month=next_birth[7], day=next_birth[8])
+            if next_occurrence < today_date:
+                next_occurrence = datetime.date(year=today_date.year + 1, month=next_birth[7], day=next_birth[8])
+            days_rem = (next_occurrence - today_date).days
+            age_after = self.model.calculate_age(bdate) + 1
+            next_content = (
+                f"{name}\n"
+                f"{bdate.strftime('%d %b %Y')}\n"
+                f"{days_rem} days remaining\n"
+                f"Turns {age_after}"
+            )
+            self.view.update_card(self.view.card_next, next_content)
         else:
             self.view.update_card(self.view.card_next, "—")
 
-        # Total contacts
+        # ---------- Total Contacts ----------
         total = len(self.model.get_all_birthdays())
-        self.view.update_card(self.view.card_total, str(total))
+        self.view.update_card(self.view.card_total, f"Total: {total}")
 
     # ---------------------------------------------------------------------
     # UI helper methods
     # ---------------------------------------------------------------------
     def refresh_table(self, data: List[Tuple]) -> None:
-        self.view.refresh_table(data)
+        """Refresh the table view, adding a ``days_remaining`` column.
+
+        ``data`` is a list of birthday tuples as returned by the model.
+        """
+        # Compute days remaining for each record
+        today = datetime.date.today()
+        enriched = []
+        for row in data:
+            _, first, last, bdate, email, notes, category, month, day = row
+            # Determine next occurrence of the birthday
+            next_bday = datetime.date(year=today.year, month=month, day=day)
+            if next_bday < today:
+                next_bday = datetime.date(year=today.year + 1, month=month, day=day)
+            days_rem = (next_bday - today).days
+            enriched.append((*row, days_rem))
+        # Update Treeview rows
+        self.view.clear_table()
+        for rec in enriched:
+            # Convert date to ISO string for display
+            display_row = list(rec)
+            # Replace datetime.date with ISO format string for the birthday column (index 3)
+            if isinstance(display_row[3], datetime.date):
+                display_row[3] = display_row[3].isoformat()
+            self.view.insert_row(display_row)
 
     def _show_msg(self, msg: str) -> None:
         messagebox.showinfo(title="Info", message=msg, parent=self.view.root)

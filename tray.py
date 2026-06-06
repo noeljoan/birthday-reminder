@@ -20,8 +20,8 @@ import threading
 from pathlib import Path
 
 # Local imports – we reuse existing functionality.
-from . import gui  # ``gui.main`` starts the application UI
-from . import notifications  # toast helpers
+import gui  # ``gui.main`` starts the application UI
+import notifications  # toast helpers
 
 
 def _create_icon_image() -> "PIL.Image.Image":

@@ -18,7 +18,8 @@ import datetime
 from typing import List, Tuple
 
 # Import the data‑layer functions we need
-from . import database
+
+import database
 
 # ---------------------------------------------------------------------------
 # Helper: create and display a Windows toast using winotify (fallback to plyer)
@@ -115,6 +116,25 @@ def send_all_notifications() -> None:
     """
     notify_birthdays_today()
     notify_upcoming_birthdays()
+
+# ---------------------------------------------------------------------------
+# Tray integration helper
+# ---------------------------------------------------------------------------
+def start_tray_if_needed():
+    """Start the system‑tray icon if running on Windows.
+
+    The ``tray`` module contains the full implementation. Importing it lazily
+    avoids pulling heavy GUI dependencies on non‑Windows platforms (e.g., CI).
+    """
+    import sys
+    if sys.platform.startswith("win"):
+        try:
+            import tray
+            tray.start_tray()
+        except Exception:
+            # If tray fails (missing pystray, etc.) we silently ignore – the app
+            # can still run without tray support.
+            pass
 
 # ---------------------------------------------------------------------------
 # When run as a script, fire the notifications immediately – handy for
