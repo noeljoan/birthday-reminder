@@ -1,5 +1,3 @@
-<div align="center">
-  <img src="birthday_reminder.ico" alt="Birthday Reminder Icon" width="100"/>
 
   # Birthday Reminder
 
