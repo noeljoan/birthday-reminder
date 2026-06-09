@@ -2,7 +2,7 @@
   # Birthday Reminder
 
   [![Python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue?logo=python)](https://www.python.org/)
-  [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/noeljoan/weight-and-balance/blob/main/LICENSE))
+  [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/noeljoan/weight-and-balance/blob/main/LICENSE)
 </div>
 
 A modern desktop application for tracking birthdays with a clean CustomTkinter interface, automatic Windows toast notifications, system-tray integration, and CSV import/export support.
